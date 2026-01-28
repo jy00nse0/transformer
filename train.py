@@ -1,8 +1,3 @@
-"""
-@author : Hyunwoong
-@when : 2019-10-22
-@homepage : https://github.com/gusdnd852
-"""
 import math
 import time
 
@@ -11,18 +6,9 @@ from torch.optim import Adam
 
 from data import *
 from models.model.transformer import Transformer
-from util.bleu import idx_to_word, get_bleu
-from util.epoch_timer import epoch_time
+# sacred bleu import
 
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-def initialize_weights(m):
-    if hasattr(m, 'weight') and m.weight.dim() > 1:
-        nn.init.kaiming_uniform(m.weight.data)
-
+from util.utils import *
 
 model = Transformer(src_pad_idx=src_pad_idx,
                     trg_pad_idx=trg_pad_idx,
@@ -39,18 +25,31 @@ model = Transformer(src_pad_idx=src_pad_idx,
 
 print(f'The model has {count_parameters(model):,} trainable parameters')
 model.apply(initialize_weights)
+'''
+We used the Adam optimizer [20] with β1 = 0.9, β2 = 0.98 and ϵ = 10−9
+. We varied the learning
+rate over the course of training, according to the formula:
+lrate = d−0.5model · min(step_num−0.5, step_num · warmup_steps−1.5) (3)
+This corresponds to increasing the learning rate linearly for the first warmup_steps training steps,
+and decreasing it thereafter proportionally to the inverse square root of the step number. We used
+warmup_steps = 4000.
+
+'''
 optimizer = Adam(params=model.parameters(),
                  lr=init_lr,
                  weight_decay=weight_decay,
                  eps=adam_eps)
 
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
-                                                 verbose=True,
-                                                 factor=factor,
-                                                 patience=patience)
+# 논문 수식을 파이썬으로 옮긴 예시
+def get_lr_schedule(step_num, d_model, warmup_steps):
+    # lrate = d_model^-0.5 * min(step^-0.5, step * warmup^-1.5)
+    return (d_model ** -0.5) * min(step_num ** -0.5, step_num * (warmup_steps ** -1.5))
 
-criterion = nn.CrossEntropyLoss(ignore_index=src_pad_idx)
-
+# LambdaLR 적용 예시
+scheduler = optim.lr_scheduler.LambdaLR(
+    optimizer, 
+    lr_lambda=lambda step: get_lr_schedule(step + 1, d_model=512, warmup_steps=4000)
+)
 
 def train(model, iterator, optimizer, criterion, clip):
     model.train()
@@ -66,7 +65,8 @@ def train(model, iterator, optimizer, criterion, clip):
 
         loss = criterion(output_reshape, trg)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+        # 논문에 없어서 일단 주석처리
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
 
         epoch_loss += loss.item()
@@ -83,30 +83,32 @@ def evaluate(model, iterator, criterion):
         for i, batch in enumerate(iterator):
             src = batch.src
             trg = batch.trg
+            # model predicts next token probability
             output = model(src, trg[:, :-1])
             output_reshape = output.contiguous().view(-1, output.shape[-1])
+            # target level starts from 1, so we skip the first <sos>
             trg = trg[:, 1:].contiguous().view(-1)
 
             loss = criterion(output_reshape, trg)
             epoch_loss += loss.item()
-
             total_bleu = []
             for j in range(batch_size):
                 try:
                     trg_words = idx_to_word(batch.trg[j], loader.target.vocab)
                     output_words = output[j].max(dim=1)[1]
                     output_words = idx_to_word(output_words, loader.target.vocab)
-                    bleu = get_bleu(hypotheses=output_words.split(), reference=trg_words.split())
+                    #bleu = get_bleu(hypotheses=output_words.split(), reference=trg_words.split())
+                    # use sacred bleu instaed of get_bleu
                     total_bleu.append(bleu)
                 except:
                     pass
-
+            # compute mean bleu score for batch sentences
+            # thus total bleu is list of bleu scores for each sentence in batch    
             total_bleu = sum(total_bleu) / len(total_bleu)
             batch_bleu.append(total_bleu)
-
+    # compute mean bleu score for all batches, bleu score correstponds to one sencentence in batch
     batch_bleu = sum(batch_bleu) / len(batch_bleu)
     return epoch_loss / len(iterator), batch_bleu
-
 
 def run(total_epoch, best_loss):
     train_losses, test_losses, bleus = [], [], []
