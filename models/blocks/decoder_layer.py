@@ -3,52 +3,54 @@
 @when : 2019-10-24
 @homepage : https://github.com/gusdnd852
 """
+import torch
 from torch import nn
 
-from models.layers.layer_norm import LayerNorm
-from models.layers.multi_head_attention import MultiHeadAttention
-from models.layers.position_wise_feed_forward import PositionwiseFeedForward
-
-
 class DecoderLayer(nn.Module):
-
     def __init__(self, d_model, ffn_hidden, n_head, drop_prob):
         super(DecoderLayer, self).__init__()
-        self.self_attention = MultiHeadAttention(d_model=d_model, n_head=n_head)
-        self.norm1 = LayerNorm(d_model=d_model)
+        
+        # 1. Masked Self-Attention (디코더 스스로를 쳐다봄)
+        self.self_attention = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, 
+                                                    dropout=drop_prob, batch_first=True)
+        self.norm1 = nn.LayerNorm(d_model)
         self.dropout1 = nn.Dropout(p=drop_prob)
 
-        self.enc_dec_attention = MultiHeadAttention(d_model=d_model, n_head=n_head)
-        self.norm2 = LayerNorm(d_model=d_model)
+        # 2. Encoder-Decoder Attention (인코더의 정보를 가져옴)
+        self.enc_dec_attention = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, 
+                                                        dropout=drop_prob, batch_first=True)
+        self.norm2 = nn.LayerNorm(d_model)
         self.dropout2 = nn.Dropout(p=drop_prob)
 
-        self.ffn = PositionwiseFeedForward(d_model=d_model, hidden=ffn_hidden, drop_prob=drop_prob)
-        self.norm3 = LayerNorm(d_model=d_model)
+        # 3. Positionwise Feed Forward (내장 Linear 모듈 조합)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, ffn_hidden),
+            nn.ReLU(),
+            nn.Dropout(p=drop_prob),
+            nn.Linear(ffn_hidden, d_model)
+        )
+        self.norm3 = nn.LayerNorm(d_model)
         self.dropout3 = nn.Dropout(p=drop_prob)
 
     def forward(self, dec, enc, trg_mask, src_mask):
-        # 1. compute self attention
-        _x = dec
-        x = self.self_attention(q=dec, k=dec, v=dec, mask=trg_mask)
-        
-        # 2. add and norm
-        x = self.dropout1(x)
-        x = self.norm1(x + _x)
+        # --- 1. Masked Self Attention ---
+        # trg_mask는 미래 토큰을 가리는용도 (Look-ahead mask)
+        residual = dec
+        # nn.MultiheadAttention은 (output, attn_weights)를 반환함
+        x, _ = self.self_attention(query=dec, key=dec, value=dec, attn_mask=trg_mask)
+        x = self.norm1(x + self.dropout1(x))
 
+        # --- 2. Encoder-Decoder Attention ---
         if enc is not None:
-            # 3. compute encoder - decoder attention
-            _x = x
-            x = self.enc_dec_attention(q=x, k=enc, v=enc, mask=src_mask)
-            
-            # 4. add and norm
-            x = self.dropout2(x)
-            x = self.norm2(x + _x)
+            residual = x
+            # Query는 디코더(x), Key와 Value는 인코더(enc)에서 가져옴
+            # src_mask는 인코더의 패딩 토큰을 무시하는 용도
+            x, _ = self.enc_dec_attention(query=x, key=enc, value=enc, attn_mask=src_mask)
+            x = self.norm2(x + self.dropout2(x))
 
-        # 5. positionwise feed forward network
-        _x = x
+        # --- 3. Positionwise Feed Forward ---
+        residual = x
         x = self.ffn(x)
+        x = self.norm3(x + self.dropout3(x))
         
-        # 6. add and norm
-        x = self.dropout3(x)
-        x = self.norm3(x + _x)
         return x
