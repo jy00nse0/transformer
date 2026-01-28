@@ -9,7 +9,6 @@ from torch import nn
 from models.model.decoder import Decoder
 from models.model.encoder import Encoder
 
-
 class Transformer(nn.Module):
 
     def __init__(self, src_pad_idx, trg_pad_idx, trg_sos_idx, enc_voc_size, dec_voc_size, d_model, n_head, max_len,
@@ -38,6 +37,7 @@ class Transformer(nn.Module):
                                device=device)
 
     def forward(self, src, trg):
+        # 마스크 먼저 만듬
         src_mask = self.make_src_mask(src)
         trg_mask = self.make_trg_mask(trg)
         enc_src = self.encoder(src, src_mask)
