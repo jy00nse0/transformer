@@ -4,12 +4,11 @@
 
 import torch
 import torch.nn as nn
-from tokenizer_with_progress import BPETokenizer
-from data_loader_improved import DataLoader
-from transformer import Transformer
+from util.tokenizer_with_progress import BPETokenizer
+from util.data_loader import DataLoader
+from models.model.transformer import Transformer
 import time
 import sys
-
 def print_section(title):
     """섹션 헤더 출력"""
     print(f"\n{'='*80}")
