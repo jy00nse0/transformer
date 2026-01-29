@@ -122,7 +122,7 @@ class WordPieceTokenizer:
         for word, freq in word_freqs.items():
             split = splits[word]
             if len(split) == 1:
-            char_freqs[split[0]] += freq
+                char_freqs[split[0]] += freq
             for i in range(len(split)):
                 char_freqs[split[i]] += freq
                 if i < len(split) - 1:
