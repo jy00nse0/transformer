@@ -6,7 +6,7 @@
 from torch import nn
 
 from models.blocks.encoder_layer import EncoderLayer
-from models.embedding import Embedding
+from models.embedding.embedding import Embedding
 
 
 class Encoder(nn.Module):
