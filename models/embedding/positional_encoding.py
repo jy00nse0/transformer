@@ -5,7 +5,6 @@
 """
 import torch
 from torch import nn
-from models.embedding.positional_encoding import PositionalEncoding
 
 class PositionalEncoding(nn.Module):
     """
